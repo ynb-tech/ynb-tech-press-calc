@@ -107,6 +107,10 @@
 
     <hr style="border:0; border-top:1px solid #ddd; margin: 15px 0;">
 
+    <div class="note" style="margin-top:0; margin-bottom: 15px; padding: 8px;">
+        ※ Z曲げなど、逆方向へ曲げる場合は角度に「マイナス（例：-90）」を入力してください。
+    </div>
+
     <div class="row">
         <div><label>外寸1 (L1)</label><input type="number" id="l1" oninput="calc()" placeholder="0.0"></div>
         <div><label>角度1</label><input type="number" id="a1" value="90" oninput="calc()"></div>
@@ -180,7 +184,6 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (ls[0] <= 0) {
-            // 寸法未入力時はガイドテキストを表示
             ctx.fillStyle = '#aaa';
             ctx.font = '14px sans-serif';
             ctx.textAlign = 'center';
@@ -191,15 +194,16 @@
         let pts = [{x: 0, y: 0}];
         let currentX = 0;
         let currentY = 0;
-        let currentAngle = 0; // 開始角度（水平）
+        let currentAngle = 0; 
 
-        // 各セグメントの頂点座標を計算
         for (let i = 0; i < 4; i++) {
             if (ls[i] <= 0) break;
             
             if (i > 0) {
-                // (180 - 入力角度)が実際の曲げ角度。上方向に曲げるためマイナスにする
-                currentAngle -= (180 - angles[i-1]) * (Math.PI / 180);
+                let rawAngle = angles[i-1];
+                let sign = rawAngle < 0 ? -1 : 1;
+                let absAngle = Math.abs(rawAngle);
+                currentAngle -= sign * (180 - absAngle) * (Math.PI / 180);
             }
             
             currentX += ls[i] * Math.cos(currentAngle);
@@ -207,7 +211,6 @@
             pts.push({x: currentX, y: currentY});
         }
 
-        // 描画がキャンバスに収まるように自動スケール調整
         let minX = 0, maxX = 0, minY = 0, maxY = 0;
         pts.forEach(p => {
             if (p.x < minX) minX = p.x;
@@ -227,11 +230,9 @@
             scale = Math.min(scaleX, scaleY);
         }
         
-        // センタリング用のオフセット
         const offsetX = (canvas.width - width * scale) / 2 - minX * scale;
         const offsetY = (canvas.height - height * scale) / 2 - minY * scale;
 
-        // 線の描画設定
         ctx.beginPath();
         ctx.moveTo(pts[0].x * scale + offsetX, pts[0].y * scale + offsetY);
         for (let i = 1; i < pts.length; i++) {
@@ -239,11 +240,16 @@
         }
 
         ctx.strokeStyle = '#3498db';
-        // 板厚に応じて線の太さを変える（視覚的なわかりやすさ重視）
         ctx.lineWidth = Math.max(3, t * scale * 0.4); 
-        ctx.lineJoin = 'round'; // 曲げ部分を丸く表現
+        ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         ctx.stroke();
+    }
+
+    // ★修正ポイント：空欄や「-」入力中のエラーを防ぐヘルパー関数
+    function getSafeAngle(id) {
+        const val = parseFloat(document.getElementById(id).value);
+        return isNaN(val) ? 90 : val; // 数値以外（-など）が入力された瞬間は仮に90度として画面崩れを防ぐ
     }
 
     function calc() {
@@ -259,13 +265,14 @@
             parseFloat(document.getElementById('l3').value) || 0,
             parseFloat(document.getElementById('l4').value) || 0
         ];
+        
+        // ★修正ポイント：安全な関数で角度を取得する
         const angles = [
-            parseFloat(document.getElementById('a1').value) || 90,
-            parseFloat(document.getElementById('a2').value) || 90,
-            parseFloat(document.getElementById('a3').value) || 90
+            getSafeAngle('a1'),
+            getSafeAngle('a2'),
+            getSafeAngle('a3')
         ];
 
-        // プレビュー描画の実行
         drawPreview(ls, angles, t);
 
         let l90 = deductionTable[mat][tStr];
@@ -285,8 +292,14 @@
             if (ls[i] < v * 0.7) sensorStatus = "length_ng";
 
             if (i < 3 && ls[i+1] > 0) {
-                let bendAngle = 180 - angles[i];
-                if (angles[i] > 165 || angles[i] < 30) sensorStatus = "angle_ng";
+                let absAngle = Math.abs(angles[i]);
+                
+                // 0度が入力された場合のみスキップ（真っ直ぐなので伸びは発生しない）
+                if (absAngle === 0) continue;
+
+                let bendAngle = 180 - absAngle;
+                
+                if (absAngle > 165 || absAngle < 30) sensorStatus = "angle_ng";
                 
                 let currentL = l90 * Math.pow(bendAngle / 90, 1.5);
                 totalMinus += currentL;
@@ -319,8 +332,9 @@
             sensorMsgDiv.innerHTML = "";
         }
 
-        if (angles[0] > 0 && ls[1] > 0) {
-            let dBase = (v / 4) * Math.tan(((180 - angles[0]) / 2) * (Math.PI / 180));
+        if (angles[0] !== 0 && ls[1] > 0) {
+            let absA1 = Math.abs(angles[0]);
+            let dBase = (v / 4) * Math.tan(((180 - absA1) / 2) * (Math.PI / 180));
             let dFinal = dBase + t + (pr * 0.2);
             document.getElementById('d_val_display').innerText = `【参考D値】ストローク目安: ${dFinal.toFixed(2)}`;
         } else {
@@ -347,7 +361,6 @@
 
     window.onload = function() {
         autoV();
-        // 初期状態（寸法未入力）でもプレビューを描画（ガイドテキスト表示のため）
         calc();
     };
 </script>
